@@ -7,6 +7,9 @@ import numpy as np
 # Notes:
 # can participate in practice mode, 2-5 player games
 
+#simple game switch
+play_simple_game = 0
+
 ###################
 # Prior game setup#
 ###################
@@ -92,98 +95,140 @@ def move_man(pl):
     companies[pl,list_companies.index(move_company_to),move_level_to] = companies[pl,list_companies.index(move_company_to),move_level_to]+1
 
 
-############
-# Game play#
-############
+###################
+# Simple Game play#
+###################
 
-# main while loop for rounds of the game: start
-game_round = 0
-while max(pl_money) < 12:
-    # investment phase
-    pl_order = np.roll(np.arange(npl),-game_round)  # player order, rolling clockwise each round
-    for i in pl_order:
-        print("Round "+str(game_round+1)+" Player "+str(i+1)+".")
-        investment_dec = gen_input("Enter investment decision (place/move/pass): ", str.lower, range_=('place','move','pass'))
-        if investment_dec == 'place':
-            place_man(i)
-        elif investment_dec == 'move':
-            move_man(i)
+if play_simple_game == 1:
+    # main while loop for rounds of the game: start
+    game_round = 0
+    while max(pl_money) < 12:
+        # investment phase
+        pl_order = np.roll(np.arange(npl),-game_round)  # player order, rolling clockwise each round
+        for i in pl_order:
+            print("Round "+str(game_round+1)+" Player "+str(i+1)+".")
+            investment_dec = gen_input("Enter investment decision (place/move/pass): ", str.lower, range_=('place','move','pass'))
+            if investment_dec == 'place':
+                place_man(i)
+            elif investment_dec == 'move':
+                move_man(i)
 
 
-    # production (payout) phase
-    for i in range(0,npl):
-        pl_money[i] = pl_money[i] + (
-        # elektrarna
-            companies[i,0,0] * (energy_price - 2) +
-            companies[i,0,1] * (2 * energy_price - 4) +
-            companies[i,0,2] * (energy_price - 1) +
-        # automobilka
-            companies[i,1,0] * (transport_price - energy_price) +
-            companies[i,1,1] * (transport_price - 2) +
-            companies[i,1,2] * (2 * transport_price - 2 * energy_price) +
-        # dopravce
-            companies[i,2,0] * (5 - transport_price) +
-            companies[i,2,1] * (9 - transport_price - energy_price) +
-            companies[i,2,2] * (10 - 2 * transport_price) +
-        # it_firma
-            companies[i,3,0] * (4 - energy_price) +
-            companies[i,3,1] * (8 - 2 * energy_price) +
-            companies[i,3,2] * (5 - energy_price)
-        )
-    # price adjustment phase - market supply & demand
-    energy_supply = (
-    # elektrarna
-        sum(companies[:,0,0]) * 1 +
-        sum(companies[:,0,1]) * 2 +
-        sum(companies[:,0,2]) * 1
-    )
-
-    energy_demand = (
-    # automobilka
-        sum(companies[:,1,0]) * 1 +
-        sum(companies[:,1,2]) * 2 +
-    # dopravce
-        sum(companies[:,2,1]) * 1 +
-    # it_firma
-        sum(companies[:,3,0]) * 1 +
-        sum(companies[:,3,1]) * 2 +
-        sum(companies[:,3,2]) * 1
-    )
-
-    transport_supply = (
-        # automobilka
-        sum(companies[:,1,0]) * 1 +
-        sum(companies[:,1,1]) * 1 +
-        sum(companies[:,1,2]) * 2
-    )
-
-    transport_demand = (
-        # dopravce
-        sum(companies[:,2,0]) * 1 +
-        sum(companies[:,2,1]) * 1 +
-        sum(companies[:,2,2]) * 2
-    )
-
-    # price adjustment phase - market prices
-    if energy_supply > energy_demand:
-        energy_price = energy_price - 1
-    elif energy_supply < energy_demand:
-        energy_price = energy_price + 1
-
-    if transport_supply > transport_demand:
-        transport_price = transport_price - 1
-    elif transport_supply < transport_demand:
-        transport_price = transport_price + 1
-
-    # check for win condition at the end of the round
-    if max(pl_money) >= 12:
-        print("Game over!")
+        # production (payout) phase
         for i in range(0,npl):
-            print("Player "+str(i+1)+" final score: "+str(pl_money[i]))
-        break
+            pl_money[i] = pl_money[i] + (
+            # elektrarna
+                companies[i,0,0] * (energy_price - 2) +
+                companies[i,0,1] * (2 * energy_price - 4) +
+                companies[i,0,2] * (energy_price - 1) +
+            # automobilka
+                companies[i,1,0] * (transport_price - energy_price) +
+                companies[i,1,1] * (transport_price - 2) +
+                companies[i,1,2] * (2 * transport_price - 2 * energy_price) +
+            # dopravce
+                companies[i,2,0] * (5 - transport_price) +
+                companies[i,2,1] * (9 - transport_price - energy_price) +
+                companies[i,2,2] * (10 - 2 * transport_price) +
+            # it_firma
+                companies[i,3,0] * (4 - energy_price) +
+                companies[i,3,1] * (8 - 2 * energy_price) +
+                companies[i,3,2] * (5 - energy_price)
+            )
+        # price adjustment phase - market supply & demand
+        energy_supply = (
+        # elektrarna
+            sum(companies[:,0,0]) * 1 +
+            sum(companies[:,0,1]) * 2 +
+            sum(companies[:,0,2]) * 1
+        )
 
-    game_round = game_round + 1
+        energy_demand = (
+        # automobilka
+            sum(companies[:,1,0]) * 1 +
+            sum(companies[:,1,2]) * 2 +
+        # dopravce
+            sum(companies[:,2,1]) * 1 +
+        # it_firma
+            sum(companies[:,3,0]) * 1 +
+            sum(companies[:,3,1]) * 2 +
+            sum(companies[:,3,2]) * 1
+        )
+
+        transport_supply = (
+            # automobilka
+            sum(companies[:,1,0]) * 1 +
+            sum(companies[:,1,1]) * 1 +
+            sum(companies[:,1,2]) * 2
+        )
+
+        transport_demand = (
+            # dopravce
+            sum(companies[:,2,0]) * 1 +
+            sum(companies[:,2,1]) * 1 +
+            sum(companies[:,2,2]) * 2
+        )
+
+        # price adjustment phase - market prices
+        if energy_supply > energy_demand:
+            energy_price = energy_price - 1
+        elif energy_supply < energy_demand:
+            energy_price = energy_price + 1
+
+        if transport_supply > transport_demand:
+            transport_price = transport_price - 1
+        elif transport_supply < transport_demand:
+            transport_price = transport_price + 1
+
+        # check for win condition at the end of the round
+        if max(pl_money) >= 12:
+            print("Game over!")
+            for i in range(0,npl):
+                print("Player "+str(i+1)+" final score: "+str(pl_money[i]))
+            break
+
+        game_round = game_round + 1
 # main while loop for rounds of the game: end
 
-#print check
-#print(companies)
+
+###############
+# AI Game play#
+###############
+
+#!!!PROZATIM...napojeni na klasickou hru
+game_round = 0 # tady se to napoji na klasickou hru
+
+#depth of minmax tree
+max_round_depth = 3 # finish x + 0th round
+current_ai_pos = np.roll(np.arange(npl),-game_round).tolist().index(ai_pos) #position(index) of AI player in a given round
+max_depth = npl - current_ai_pos + max_round_depth * npl
+
+# initialize useful vectors
+who_on_turn = np.zeros(max_depth,dtype=np.int)
+end_of_turn = np.zeros(max_depth,dtype=np.int)
+turn_value = np.zeros(max_depth,dtype=np.int)
+
+# who plays which turn
+for j in range(0,npl - current_ai_pos): # 0th round (from AI further)
+    who_on_turn[j] = np.roll(np.arange(npl),-game_round).tolist()[j+current_ai_pos]
+
+for j in range(1,max_round_depth+1): # rest of full rounds
+  who_on_turn[(j*npl - current_ai_pos):(j+1)*npl - current_ai_pos] = np.roll(np.arange(npl),-(game_round+j))
+
+
+# is this the last player move in this round ?
+for j in range(1,max_round_depth+2):
+    end_of_turn[j*npl - current_ai_pos-1] = 1
+
+# the value to which the comparison should be initially made in a given turn (max for AI, min for non-AI)
+for j in range(0,max_depth):
+    if who_on_turn[j] == ai_pos:
+        turn_value[j]=-1000
+    else:
+        turn_value[j]=1000
+
+print(ai_pos)
+print(who_on_turn)
+print(end_of_turn)
+print(turn_value)
+
+#dalsi krok spociva v tom jak udelat smycku pro vsechny mozne pohyby pass-place-move a udelat rekurzivni funkci minmax
