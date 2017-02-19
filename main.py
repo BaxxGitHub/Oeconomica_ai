@@ -199,13 +199,34 @@ game_round = 0 # tady se to napoji na klasickou hru
 
 #depth of minmax tree
 max_round_depth = 3 # finish x + 0th round
-current_ai_pos = np.roll(np.arange(npl),-game_round).tolist().index(ai_pos) #position(index) of AI player in a given round
+
+current_ai_pos = np.roll(np.arange(npl),-game_round).tolist().index(ai_pos)  # position(index) of AI player in a given round
 max_depth = npl - current_ai_pos + max_round_depth * npl
 
-# initialize useful vectors
+# initialize key driving vectors
 who_on_turn = np.zeros(max_depth,dtype=np.int)
 end_of_turn = np.zeros(max_depth,dtype=np.int)
 turn_value = np.zeros(max_depth,dtype=np.int)
+
+# initialize vector to save optimal action
+action_optimal = np.zeros(6,dtype=np.int)
+action_temporary = np.zeros(6,dtype=np.int)
+
+#initialize key driving matrices
+companies_mat = np.zeros((max_depth+1, npl, 4, 3),dtype=np.int)  # depth X player X company X level (clockwise starting from bottom)
+companies_mat[0,:,:,:] = companies
+
+pl_money_mat = np.zeros((max_depth+1, npl),dtype=np.int)  # depth X player
+pl_money_mat[0,:] = pl_money
+
+pl_free_man_mat = np.zeros((max_depth+1, npl),dtype=np.int) # depth X player
+pl_free_man_mat[0,:] = pl_free_man
+
+energy_price_mat = np.zeros(max_depth+1,dtype=np.int)
+energy_price_mat[0] = energy_price
+
+transport_price_mat = np.zeros(max_depth+1,dtype=np.int)
+transport_price_mat[0] = transport_price
 
 # who plays which turn
 for j in range(0,npl - current_ai_pos): # 0th round (from AI further)
@@ -222,13 +243,365 @@ for j in range(1,max_round_depth+2):
 # the value to which the comparison should be initially made in a given turn (max for AI, min for non-AI)
 for j in range(0,max_depth):
     if who_on_turn[j] == ai_pos:
-        turn_value[j]=-1000
+        turn_value[j] = -1000
     else:
-        turn_value[j]=1000
+        turn_value[j] = 1000
 
 print(ai_pos)
 print(who_on_turn)
 print(end_of_turn)
 print(turn_value)
 
-#dalsi krok spociva v tom jak udelat smycku pro vsechny mozne pohyby pass-place-move a udelat rekurzivni funkci minmax
+
+#Min-max recursion
+depth = 0 # initial depth
+def minmax(depth):
+    if depth < max_depth:
+
+        # basic transfer to next turn
+        companies_mat[depth+1, :, :, :] = companies_mat[depth, :, :, :]
+        pl_money_mat[depth+1, :] = pl_money_mat[depth, :]
+        pl_free_man_mat[depth+1, :] = pl_free_man_mat[depth, :]
+        energy_price_mat[depth+1]=energy_price_mat[depth]
+        transport_price_mat[depth+1]=transport_price_mat[depth]
+
+        # pass
+        if depth == 0:  # saving potentially optimal action
+            action_temporary[0] = 0
+
+        trans_proc_pass(depth)
+
+        # place
+        if (pl_money_mat[depth, who_on_turn[depth]] >= 4) and (pl_free_man_mat[depth, who_on_turn[depth]] >= 1): # if feasible
+
+            for c in range(0,4): # for all of the 4 companies
+                # move forward
+                pl_free_man_mat[depth+1, who_on_turn[depth]] = pl_free_man_mat[depth,who_on_turn[depth]]-1  # remove a free manager
+                companies_mat[depth+1, who_on_turn[depth],c,0] = companies_mat[depth, who_on_turn[depth],c,0]+1 # place the manager
+
+                if depth == 0:  # saving potentially optimal action
+                    action_temporary[0] = 1
+                    action_temporary[1] = c
+
+                trans_proc_place(depth)
+
+                # move backward (reset state before choice of another action
+                companies_mat[depth+1, :, :, :] = companies_mat[depth, :, :, :]
+                pl_money_mat[depth+1, :] = pl_money_mat[depth, :]
+
+        # move
+        if (pl_money_mat[depth, who_on_turn[depth]] >= 1): # if feasible
+
+            for cf in range(0,4): # from all of the 4 companies
+                for lf in range(0,3): # from all of the 3 levels
+
+                    if (companies_mat[depth, who_on_turn[depth],cf,lf] >= 1): # if there is anything to be moved with
+
+                        for ct in range(0,4): # to all of the 4 companies
+                            for lt in range(0,3): # to all of the 3 levels
+
+                                if ((cf == ct) and (lf != lt)) or ((cf != ct) and (lf == 1) and ( lt == 1)):
+
+                                    # move forward
+                                    companies_mat[depth+1, who_on_turn[depth],cf,lf] = companies_mat[depth, who_on_turn[depth],cf,lf]-1  # move a manager from
+                                    companies_mat[depth+1, who_on_turn[depth],ct,lt] = companies_mat[depth, who_on_turn[depth],ct,lt]+1 # move a manager to
+
+                                    if depth == 0:  # saving potentially optimal action
+                                        action_temporary[0] = 2
+                                        action_temporary[2] = cf
+                                        action_temporary[3] = lf
+                                        action_temporary[4] = ct
+                                        action_temporary[5] = lt
+
+                                    trans_proc_move(depth)
+
+                                    # move backward (reset state before choice of another action
+                                    companies_mat[depth+1, :, :, :] = companies_mat[depth, :, :, :]
+                                    pl_money_mat[depth+1, :] = pl_money_mat[depth, :]
+
+
+        if depth > 0:
+            # sending the minmax value up the tree
+            if who_on_turn[depth-1] == ai_pos:  # last player is the AI
+
+                if depth == 1:  # saving optimal action
+                    if turn_value[depth] >= turn_value[depth-1]:
+                        for a in range(0,6):
+                            action_optimal[a]=action_temporary[a]
+
+                turn_value[depth-1] = max(turn_value[depth-1], turn_value[depth])
+
+            else:  # last player is the regular non-AI player
+                turn_value[depth-1] = min(turn_value[depth-1], turn_value[depth])
+
+            # cleaning the current level
+            if who_on_turn[depth] == ai_pos:
+                turn_value[depth] = -1000
+            else:
+                turn_value[depth] = 1000
+
+
+#definition of transition procedures between minmax recursion steps
+def trans_proc_pass(depth):
+    if end_of_turn[depth] == 1:
+            # production (payout) phase
+            for k in range(0,npl):
+                pl_money_mat[depth+1, k] = pl_money_mat[depth, k] + (
+                # elektrarna
+                    companies_mat[depth+1,k,0,0] * (energy_price_mat[depth] - 2) +
+                    companies_mat[depth+1,k,0,1] * (2 * energy_price_mat[depth] - 4) +
+                    companies_mat[depth+1,k,0,2] * (energy_price_mat[depth] - 1) +
+                # automobilka
+                    companies_mat[depth+1,k,1,0] * (transport_price_mat[depth] - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,1,1] * (transport_price_mat[depth] - 2) +
+                    companies_mat[depth+1,k,1,2] * (2 * transport_price_mat[depth] - 2 * energy_price_mat[depth]) +
+                # dopravce
+                    companies_mat[depth+1,k,2,0] * (5 - transport_price_mat[depth]) +
+                    companies_mat[depth+1,k,2,1] * (9 - transport_price_mat[depth] - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,2,2] * (10 - 2 * transport_price_mat[depth]) +
+                # it_firma
+                    companies_mat[depth+1,k,3,0] * (4 - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,3,1] * (8 - 2 * energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,3,2] * (5 - energy_price_mat[depth])
+                )
+            # price adjustment phase - market supply & demand
+            energy_supply = (
+            # elektrarna
+                sum(companies_mat[depth+1,:,0,0]) * 1 +
+                sum(companies_mat[depth+1,:,0,1]) * 2 +
+                sum(companies_mat[depth+1,:,0,2]) * 1
+            )
+
+            energy_demand = (
+            # automobilka
+                sum(companies_mat[depth+1,:,1,0]) * 1 +
+                sum(companies_mat[depth+1,:,1,2]) * 2 +
+            # dopravce
+                sum(companies_mat[depth+1,:,2,1]) * 1 +
+            # it_firma
+                sum(companies_mat[depth+1,:,3,0]) * 1 +
+                sum(companies_mat[depth+1,:,3,1]) * 2 +
+                sum(companies_mat[depth+1,:,3,2]) * 1
+            )
+
+            transport_supply = (
+                # automobilka
+                sum(companies_mat[depth+1,:,1,0]) * 1 +
+                sum(companies_mat[depth+1,:,1,1]) * 1 +
+                sum(companies_mat[depth+1,:,1,2]) * 2
+            )
+
+            transport_demand = (
+                # dopravce
+                sum(companies_mat[depth+1,:,2,0]) * 1 +
+                sum(companies_mat[depth+1,:,2,1]) * 1 +
+                sum(companies_mat[depth+1,:,2,2]) * 2
+            )
+
+            # price adjustment phase - market prices
+            if (energy_supply > energy_demand) and (energy_price_mat[depth]>1):
+                energy_price_mat[depth+1] = energy_price_mat[depth] - 1
+            elif (energy_supply < energy_demand) and (energy_price_mat[depth]<5):
+                energy_price_mat[depth+1] = energy_price_mat[depth] + 1
+            else:
+                energy_price_mat[depth+1] = energy_price_mat[depth]
+
+            if (transport_supply > transport_demand) and (transport_price_mat[depth]>2):
+                transport_price_mat[depth+1] = transport_price_mat[depth] - 1
+            elif (transport_supply < transport_demand) and (transport_price_mat[depth]<6):
+                transport_price_mat[depth+1] = transport_price_mat[depth] + 1
+            else:
+                transport_price_mat[depth+1] = transport_price_mat[depth]
+
+
+    depth = depth + 1 # push turn forward
+
+    # static value evaluation if it is already deep enough, else recursion
+    if depth == max_depth:
+        if who_on_turn[max_depth-1] == ai_pos:  # last player is the AI
+            turn_value[max_depth-1] = max(turn_value[max_depth-1],pl_money_mat[max_depth, ai_pos])
+        else:  # last player is the regular non-AI player
+            turn_value[max_depth-1] = min(turn_value[max_depth-1],pl_money_mat[max_depth, ai_pos])
+    else:
+        minmax(depth)  # recursion
+
+def trans_proc_place(depth):
+    if end_of_turn[depth] == 1:
+            # production (payout) phase
+            for k in range(0,npl):
+                pl_money_mat[depth+1, k] = pl_money_mat[depth, k] + (
+                # elektrarna
+                    companies_mat[depth+1,k,0,0] * (energy_price_mat[depth] - 2) +
+                    companies_mat[depth+1,k,0,1] * (2 * energy_price_mat[depth] - 4) +
+                    companies_mat[depth+1,k,0,2] * (energy_price_mat[depth] - 1) +
+                # automobilka
+                    companies_mat[depth+1,k,1,0] * (transport_price_mat[depth] - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,1,1] * (transport_price_mat[depth] - 2) +
+                    companies_mat[depth+1,k,1,2] * (2 * transport_price_mat[depth] - 2 * energy_price_mat[depth]) +
+                # dopravce
+                    companies_mat[depth+1,k,2,0] * (5 - transport_price_mat[depth]) +
+                    companies_mat[depth+1,k,2,1] * (9 - transport_price_mat[depth] - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,2,2] * (10 - 2 * transport_price_mat[depth]) +
+                # it_firma
+                    companies_mat[depth+1,k,3,0] * (4 - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,3,1] * (8 - 2 * energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,3,2] * (5 - energy_price_mat[depth])
+                )
+            # price adjustment phase - market supply & demand
+            energy_supply = (
+            # elektrarna
+                sum(companies_mat[depth+1,:,0,0]) * 1 +
+                sum(companies_mat[depth+1,:,0,1]) * 2 +
+                sum(companies_mat[depth+1,:,0,2]) * 1
+            )
+
+            energy_demand = (
+            # automobilka
+                sum(companies_mat[depth+1,:,1,0]) * 1 +
+                sum(companies_mat[depth+1,:,1,2]) * 2 +
+            # dopravce
+                sum(companies_mat[depth+1,:,2,1]) * 1 +
+            # it_firma
+                sum(companies_mat[depth+1,:,3,0]) * 1 +
+                sum(companies_mat[depth+1,:,3,1]) * 2 +
+                sum(companies_mat[depth+1,:,3,2]) * 1
+            )
+
+            transport_supply = (
+                # automobilka
+                sum(companies_mat[depth+1,:,1,0]) * 1 +
+                sum(companies_mat[depth+1,:,1,1]) * 1 +
+                sum(companies_mat[depth+1,:,1,2]) * 2
+            )
+
+            transport_demand = (
+                # dopravce
+                sum(companies_mat[depth+1,:,2,0]) * 1 +
+                sum(companies_mat[depth+1,:,2,1]) * 1 +
+                sum(companies_mat[depth+1,:,2,2]) * 2
+            )
+
+            # price adjustment phase - market prices
+            if (energy_supply > energy_demand) and (energy_price_mat[depth]>1):
+                energy_price_mat[depth+1] = energy_price_mat[depth] - 1
+            elif (energy_supply < energy_demand) and (energy_price_mat[depth]<5):
+                energy_price_mat[depth+1] = energy_price_mat[depth] + 1
+            else:
+                energy_price_mat[depth+1] = energy_price_mat[depth]
+
+            if (transport_supply > transport_demand) and (transport_price_mat[depth]>2):
+                transport_price_mat[depth+1] = transport_price_mat[depth] - 1
+            elif (transport_supply < transport_demand) and (transport_price_mat[depth]<6):
+                transport_price_mat[depth+1] = transport_price_mat[depth] + 1
+            else:
+                transport_price_mat[depth+1] = transport_price_mat[depth]
+
+
+    pl_money_mat[depth+1, who_on_turn[depth]] = pl_money_mat[depth+1, who_on_turn[depth]] - 4 #cost of placing for the given player
+
+    depth = depth + 1 # push turn forward
+
+    # static value evaluation if it is already deep enough, else recursion
+    if depth == max_depth:
+        if who_on_turn[max_depth-1] == ai_pos: # last player is the AI
+            turn_value[max_depth-1] = max(turn_value[max_depth-1],pl_money_mat[max_depth, ai_pos])
+        else: # last player is the regular non-AI player
+            turn_value[max_depth-1] = min(turn_value[max_depth-1],pl_money_mat[max_depth, ai_pos])
+    else:
+        minmax(depth) # recursion
+
+def trans_proc_move(depth):
+    if end_of_turn[depth] == 1:
+            # production (payout) phase
+            for k in range(0,npl):
+                pl_money_mat[depth+1, k] = pl_money_mat[depth, k] + (
+                # elektrarna
+                    companies_mat[depth+1,k,0,0] * (energy_price_mat[depth] - 2) +
+                    companies_mat[depth+1,k,0,1] * (2 * energy_price_mat[depth] - 4) +
+                    companies_mat[depth+1,k,0,2] * (energy_price_mat[depth] - 1) +
+                # automobilka
+                    companies_mat[depth+1,k,1,0] * (transport_price_mat[depth] - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,1,1] * (transport_price_mat[depth] - 2) +
+                    companies_mat[depth+1,k,1,2] * (2 * transport_price_mat[depth] - 2 * energy_price_mat[depth]) +
+                # dopravce
+                    companies_mat[depth+1,k,2,0] * (5 - transport_price_mat[depth]) +
+                    companies_mat[depth+1,k,2,1] * (9 - transport_price_mat[depth] - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,2,2] * (10 - 2 * transport_price_mat[depth]) +
+                # it_firma
+                    companies_mat[depth+1,k,3,0] * (4 - energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,3,1] * (8 - 2 * energy_price_mat[depth]) +
+                    companies_mat[depth+1,k,3,2] * (5 - energy_price_mat[depth])
+                )
+            # price adjustment phase - market supply & demand
+            energy_supply = (
+            # elektrarna
+                sum(companies_mat[depth+1,:,0,0]) * 1 +
+                sum(companies_mat[depth+1,:,0,1]) * 2 +
+                sum(companies_mat[depth+1,:,0,2]) * 1
+            )
+
+            energy_demand = (
+            # automobilka
+                sum(companies_mat[depth+1,:,1,0]) * 1 +
+                sum(companies_mat[depth+1,:,1,2]) * 2 +
+            # dopravce
+                sum(companies_mat[depth+1,:,2,1]) * 1 +
+            # it_firma
+                sum(companies_mat[depth+1,:,3,0]) * 1 +
+                sum(companies_mat[depth+1,:,3,1]) * 2 +
+                sum(companies_mat[depth+1,:,3,2]) * 1
+            )
+
+            transport_supply = (
+                # automobilka
+                sum(companies_mat[depth+1,:,1,0]) * 1 +
+                sum(companies_mat[depth+1,:,1,1]) * 1 +
+                sum(companies_mat[depth+1,:,1,2]) * 2
+            )
+
+            transport_demand = (
+                # dopravce
+                sum(companies_mat[depth+1,:,2,0]) * 1 +
+                sum(companies_mat[depth+1,:,2,1]) * 1 +
+                sum(companies_mat[depth+1,:,2,2]) * 2
+            )
+
+            # price adjustment phase - market prices
+            if (energy_supply > energy_demand) and (energy_price_mat[depth]>1):
+                energy_price_mat[depth+1] = energy_price_mat[depth] - 1
+            elif (energy_supply < energy_demand) and (energy_price_mat[depth]<5):
+                energy_price_mat[depth+1] = energy_price_mat[depth] + 1
+            else:
+                energy_price_mat[depth+1] = energy_price_mat[depth]
+
+            if (transport_supply > transport_demand) and (transport_price_mat[depth]>2):
+                transport_price_mat[depth+1] = transport_price_mat[depth] - 1
+            elif (transport_supply < transport_demand) and (transport_price_mat[depth]<6):
+                transport_price_mat[depth+1] = transport_price_mat[depth] + 1
+            else:
+                transport_price_mat[depth+1] = transport_price_mat[depth]
+
+
+    pl_money_mat[depth+1, who_on_turn[depth]] = pl_money_mat[depth+1, who_on_turn[depth]] - 1 #cost of moving for the given player
+
+    depth = depth + 1 # push turn forward
+
+    # static value evaluation if it is already deep enough, else recursion
+    if depth == max_depth:
+        if who_on_turn[max_depth-1] == ai_pos: # last player is the AI
+            turn_value[max_depth-1] = max(turn_value[max_depth-1],pl_money_mat[max_depth, ai_pos])
+        else: # last player is the regular non-AI player
+            turn_value[max_depth-1] = min(turn_value[max_depth-1],pl_money_mat[max_depth, ai_pos])
+    else:
+        minmax(depth) # recursion
+
+# test
+#print(pl_money)
+minmax(depth)
+print(turn_value)
+print(action_optimal)
+#print(companies_mat)
+#print(pl_money_mat)
+#print(pl_free_man_mat)
+#print(energy_price_mat)
+#print(transport_price_mat)
